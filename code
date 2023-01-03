@@ -1,0 +1,328 @@
+# Case: average annual precipition in Brazil - time series
+
+dados = read.table("brazil.txt",header=TRUE)
+  Y = dados[,2] 
+  Y = ts(Y,start=1901,end=2021)
+  plot(Y,type="l",col="blue")
+  Y = as.matrix(Y)
+  
+  require(L1pack)
+  library(nipals)   
+  library(matrixcalc)
+  require(randomcoloR)
+  
+  s = dim(Y)[1]              # TS length            
+  N = 20                     # subseries length
+  L = ceiling(N/2)           # window length
+  K = N - L + 1              
+  w = s - N + 1
+  n = 0
+  Q = L                      
+  D = matrix(0,w,Q)
+  c = 1
+
+while (n < w) {
+  
+  # trajectory matrix
+  
+      X1 = outer(((n+1):(n+L)),((n+1):(n+K)),function(x,y) Y[(x+y-(n+1))])
+      X = scale(X1,center=TRUE,scale=FALSE)
+  
+  # robust decomposition (L1 norm)
+  
+      ene = dim(X)[1]
+      m = dim(X)[2]
+      U = matrix(0, ene, m)
+      d = numeric()
+      V = matrix(0, m, m)
+  
+      epslon = 10^-6
+      for (j in 1:Q){
+        for (i in 1:ene){
+          U[i,j] = abs(median(X[i,])) 
+        }
+        u = U[,j]
+        delta.u = 1
+        while ( delta.u > epslon) {	
+          ce = numeric()
+          for (k in 1:m) {
+            ce[k] = l1fit(u, X[,k],intercept = FALSE, tolerance = 1e-50)$coefficients
+          }
+          V[,j] = ce / sqrt(sum(ce^2))
+          a = numeric()
+          for (i in 1:ene) {
+            a[i] = l1fit(V[,j], X[i,], intercept = FALSE, tolerance = 1e-50)$coefficients
+          }
+          U[,j] = a / sqrt(sum(a^2))
+          delta.u = t(U[,j]-u) %*% (U[,j]-u)	
+          u = U[,j]
+        }
+        W = U[,j]%*%t(V[,j])
+        b = numeric()
+        
+        for (k in 1:m){
+          b[k] = l1fit(W[,k], X[,k],intercept = FALSE, tolerance = 1e-50)$coefficients
+        }
+        
+        d[j] = max(b)
+        X = X - d[j]*U[,j]%*%t(V[,j])
+        }
+        U = U[,1:Q]
+        V = V[,1:Q]
+        d = diag(d)
+        Z2 = U%*%d
+  
+    # trajectory matrix
+    
+        X1 = outer(((n+1):(n+L)),((n+1):(n+K)),function(x,y) Y[(x+y-(n+1))])
+        X = scale(X1,center=TRUE,scale=FALSE)
+    
+    # ordinary decomposition
+    
+        FE = nipals(X)
+        P = FE$loadings[, 1:Q]
+        T = FE$scores[, 1:Q]
+        sig = diag(FE$eig[1:Q])
+        Z1 = T%*%sig
+    
+    # Z columns norm
+    
+        Z = Z1 - Z2  
+        ZM = matrix()
+        ZN = numeric()
+        cont = 1
+        
+        for(i in 1:Q){
+          ZM = Z[,1:cont]
+          ZN[i] = frobenius.norm(ZM)
+          cont = cont + 1
+        }
+        
+        D[c,] = ZN
+        c = c + 1
+        n = n + 1
+  
+}
+
+# printing results
+
+  cor = character()
+  for(i in 1:Q){
+    cor[i] = randomColor( hue="random", luminosity="random") 
+  }
+
+  plot(D[,Q],type="l",col=cor[Q], cex=1.2, lwd = 2,  cex.lab = 1.2, font.main = 3, ylim=c(0,1700),
+       cex.main = 1, ylab=expression(paste("D"[phi])), xlab="iteration (h)", 
+       main= "CPD using Robust/NIPALS decomposition of the trajectory matrix" )
+
+  for(i in 1:(Q-1)){
+    points(D[,i], y=NULL, type="l", cex=1.2, pch = 21, col=cor[i])
+  }
+
+  legend("topleft",legend=c("1st.PC","2nd.PC","3rd.PC","4th.PC","5th.PC","6th.PC","7th.PC","8th.PC",
+                          "9th.PC","10th.PC"), col=cor,lty=1:2,cex=0.5, box.col="black")
+                          
+                          
+# estimating the optimal subseries length - alternative code
+  
+  library(pcaMethods)
+  library(matrixcalc)
+  require(L1pack)
+  library(pracma)
+  require(randomcoloR)
+  require(dplyr)
+  library(rsvddpd)
+  library(nipals)
+  
+  dados = read.table("brazil.txt",header=TRUE)
+  Y = dados[,2] 
+  Y = ts(Y,start=1901,end=2021)
+  plot(Y,type="l",col="blue")
+  Y = as.matrix(Y)
+  
+  zmax=as.numeric()
+  j = c(17:90)
+  for (i in 1:74){
+    
+    Y = as.matrix(Y)
+    s = dim(Y)[1]              
+    N = j[i]
+    L = ceiling(N/2)
+    K = N - L + 1              
+    w = s - N + 1
+    n = 0
+    Q = L                      
+    D = matrix(0,w,Q)
+    c = 1
+    while (n < w) {
+      
+      X1 = outer(((n+1):(n+L)),((n+1):(n+K)),function(x,y) Y[(x+y-(n+1))])
+      X = as.matrix(scale(X1,center=TRUE,scale=FALSE))
+      
+      rob = robustSvd(X)
+      U = rob$u[,1:Q]
+      V = rob$v[,1:Q]
+      d = diag(rob$d[1:Q])
+      Z2 = U%*%d
+      
+      X1 = outer(((n+1):(n+L)),((n+1):(n+K)),function(x,y) Y[(x+y-(n+1))])
+      X = as.matrix(scale(X1,center=TRUE,scale=FALSE))
+      FM = nipals(X, center = TRUE, scale = FALSE, force.na = TRUE)
+      T_star = FM$scores[,1:Q]
+      P = FM$loadings[,1:Q]
+      Sigma = diag(FM$eig[1:Q])
+      Z1 = T_star%*%Sigma
+      
+      Z = Z1 - Z2  
+      ZM = matrix()
+      ZN = numeric()
+      cont = 1
+      
+      for(h in 1:Q){
+        ZM = Z[,1:cont]
+        ZN[h] = frobenius.norm(ZM)
+        cont = cont + 1
+      }
+      
+      D[c,] = ZN
+      c = c + 1
+      n = n + 1
+    }
+    
+    zmax[i]=max(D[,Q])/Q
+    
+  }
+  
+ which(zmax == max(zmax))
+ 
+ # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+ 
+ #                           SSA-HJ-biplot
+ 
+ 
+ dados = read.table("brazil.txt",header=TRUE)
+ Y = dados[,2] 
+ Y = ts(Y,start=1901,end=2021)
+ Y = as.matrix(Y)
+ 
+   N = dim(Y)[1]              
+   L = ceiling(N/2)          
+   K = N - L + 1              
+
+    library(nipals)
+    require(plotrix)
+
+    X = outer((1:L),(1:K),function(x,y) Y[(x+y-1)])
+    n  = dim(X)[1]
+    m  = dim(X)[2]
+
+    FM = nipals(X, center = TRUE, scale = FALSE, force.na = TRUE)
+
+    T_star = FM$scores
+    P = FM$loadings
+    Sigma = diag(FM$eig)
+    T = T_star%*%Sigma
+
+    # computing the variability (t't)
+
+        ind = c(seq(1:n))
+        rownames(T) <- ind
+        V = t(T)%*%T
+        S = matrix(0, n, n)
+        Sinv = matrix(0, n, n)
+        for (i in 1:n){
+          S[i,i] = sqrt(V[i,i])
+        }
+        for (i in 1:n){
+          Sinv[i,i] = 1/S[i,i]
+        }
+
+    # PC's explained variability
+
+        Vet = 0
+        for (i in 1:n){
+          Vet = Vet + V[i,i]
+        }
+
+        Vexp = numeric()
+        for (i in 1:n){
+          Vexp[i] = V[i,i]/Vet
+        }
+        round(Vexp)
+        ve = round(Vexp,2)*100
+        ve
+
+    # Scree plot
+
+        sqrev = numeric()
+        for (i in 1:n){
+          sqrev[i] = sqrt(V[i,i])
+        }
+
+    plot(T[,1],type="l", ylab="1st. PC",xlab="index", main="1st PC (T.S. CO2)", font.main = 2, 
+         cex.main = 1.2, cex.lab = 1.2 )
+         
+    plot(ind[1:30],sqrev[1:30],type="o", ylab = "Singular Values", xlab = "index", 
+         main="Scree plot - SSA-HJ biplot (DO concentration)", font.main = 2, 
+         cex.main = 1.1, cex.lab = 1.2)
+
+    # ssa-hj-biplot
+    
+      library(MASS)
+      library(calibrate)
+
+      s = S[1:2,1:2]
+
+      rows = dim(P)[1]
+
+      A = T
+      B = P[1:rows,1:2]
+      B = B%*%s
+
+      p.lab=as.character(c(seq(rows)))
+      p.lab2=as.character(c(seq(rows)))
+
+      plot(A[,1],A[,2],pch=19,cex=0.5,col="red",asp=1,  ylim=c(-150,150),xlim=c(-150,150),
+           main = "SSA-HJ Biplot (average anual precipitation in Brazil: 1925 - 1965)", font.main = 3,
+           cex.main = 1,font.sub=1, col.sub="black", xlab=paste("1st. PC - ", ve[1],"%", sep=""),
+           ylab=paste("2nd. PC - ", ve[2], "%", sep=""), cex.lab=0.9)
+      arrows(0,0,B[,1],B[,2],length=0.1,lwd=1, col="black")
+      textxy(B[1:rows,1],B[1:rows,2],p.lab,cex=0.9,col="blue")
+      textxy(A[1:rows,1],A[1:rows,2],p.lab,cex=0.6,col="black")
+      
+      
+      # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+      #                         SIGNAL
+      # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+      
+       media = mean(na.omit(Y))
+
+        # first group - Signal
+
+            I1<-c(1:10)
+            p<-length(I1)
+            X2<-T[,I1]%*%t(P[,I1])
+            X2
+
+        # DIAGONAL AVERAGING 
+
+            DiagAver<-function(X){
+              D<-NULL
+              for(j in 1:N){
+                s1<-max(1,(j-N+L))
+                s2<-min(L,j)
+                place<-(s1:s2)+L*(((j+1-s1):(j+1-s2))-1)
+                D[j]<-mean(X[place])
+              }
+              D
+            }
+
+            Y2 = DiagAver(X2)
+            for (i in 1:121){
+              Y2[i]=Y2[i]+media
+            }
+            Y2 = ts(Y2,start=1901,end=2021)
+      
+            plot(Y2, type="l", col="darkgreen", xlab=paste("Year"), ylab=paste("mm in depth"), 
+                 font.main = 3, cex.main = 1.2, main = "Average precipitation in Brazil TS - Signal")
+
